@@ -1,0 +1,77 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isUser(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && 
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "Admin";
+    }
+
+    function isCaregiverOf(patientId) {
+      return isAuthenticated() && 
+        exists(/databases/$(database)/documents/caregivers/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/caregivers/$(request.auth.uid)).data.patient_id == patientId;
+    }
+
+    // Users Collection
+    match /users/{userId} {
+      allow read: if isAuthenticated() && (isUser(userId) || isCaregiverOf(userId) || isAdmin());
+      allow create, update: if isAuthenticated() && (isUser(userId) || isAdmin());
+      allow delete: if isAdmin();
+    }
+
+    // Medicines Collection
+    match /medicines/{medId} {
+      allow read: if isAuthenticated() && (resource.data.patient_id == request.auth.uid || isCaregiverOf(resource.data.patient_id) || isAdmin());
+      allow create, update, delete: if isAuthenticated() && (request.resource.data.patient_id == request.auth.uid || isAdmin());
+    }
+
+    // Schedules Collection
+    match /schedules/{scheduleId} {
+      allow read: if isAuthenticated() && (resource.data.patient_id == request.auth.uid || isCaregiverOf(resource.data.patient_id) || isAdmin());
+      allow create, update, delete: if isAuthenticated() && (request.resource.data.patient_id == request.auth.uid || isAdmin());
+    }
+
+    // Reminders Collection
+    match /reminders/{remId} {
+      allow read: if isAuthenticated() && (resource.data.patient_id == request.auth.uid || isCaregiverOf(resource.data.patient_id) || isAdmin());
+      allow create, update: if isAuthenticated();
+      allow delete: if isAdmin();
+    }
+
+    // Reminder History Collection
+    match /reminder_history/{historyId} {
+      allow read: if isAuthenticated() && (resource.data.patient_id == request.auth.uid || isCaregiverOf(resource.data.patient_id) || isAdmin());
+      allow create: if isAuthenticated();
+      allow update, delete: if isAdmin();
+    }
+
+    // Caregivers Collection
+    match /caregivers/{caregiverId} {
+      allow read, write: if isAuthenticated() && (resource == null || resource.data.patient_id == request.auth.uid || request.auth.uid == caregiverId || isAdmin());
+    }
+
+    // Health Metrics & Glucose Logs Collection
+    match /health_metrics/{metricId} {
+      allow read: if isAuthenticated() && (resource.data.patient_id == request.auth.uid || isCaregiverOf(resource.data.patient_id) || isAdmin());
+      allow create, update: if isAuthenticated() && (request.resource.data.patient_id == request.auth.uid || isAdmin());
+      allow delete: if isAdmin();
+    }
+
+    // OCR Scans Collection
+    match /ocr_scans/{scanId} {
+      allow read, create: if isAuthenticated();
+      allow update, delete: if isAdmin();
+    }
+  }
+}
